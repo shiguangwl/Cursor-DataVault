@@ -7,6 +7,9 @@ let filteredKeys = [];
 let jsonEditorInstance = null;
 let appConfig = null;
 let currentSelectedFile = null;
+let currentSearchMode = 'key'; // 'key' 或 'global'
+let searchResults = [];
+let isGlobalSearching = false;
 
 // 应用初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -76,6 +79,8 @@ function setupEventListeners() {
     const searchClear = document.getElementById('searchClear');
     const settingsBtn = document.querySelector('.settings-btn');
     const refreshBtn = document.querySelector('.refresh-btn');
+    const keySearchModeBtn = document.getElementById('keySearchMode');
+    const globalSearchModeBtn = document.getElementById('globalSearchMode');
     
     // 搜索功能
     if (searchInput) {
@@ -86,6 +91,15 @@ function setupEventListeners() {
     // 清除搜索
     if (searchClear) {
         searchClear.addEventListener('click', clearSearch);
+    }
+    
+    // 搜索模式切换
+    if (keySearchModeBtn) {
+        keySearchModeBtn.addEventListener('click', () => setSearchMode('key'));
+    }
+    
+    if (globalSearchModeBtn) {
+        globalSearchModeBtn.addEventListener('click', () => setSearchMode('global'));
     }
     
     // 设置按钮
@@ -285,15 +299,30 @@ function updateKeyCount() {
 }
 
 // 处理搜索输入
-function handleSearchInput(event) {
-    const searchInput = event.target;
+async function handleSearchInput(event) {
+    const searchTerm = event.target.value.trim();
     const searchClear = document.getElementById('searchClear');
     
+    // 显示/隐藏清除按钮
     if (searchClear) {
-        searchClear.style.display = searchInput.value ? 'flex' : 'none';
+        searchClear.style.display = event.target.value ? 'flex' : 'none';
     }
     
-    filterKeys();
+    if (currentSearchMode === 'key') {
+        // 原有的Key搜索逻辑
+        if (searchTerm === '') {
+            clearSearch();
+        } else {
+            filterKeys();
+        }
+    } else if (currentSearchMode === 'global') {
+        // 全局搜索逻辑
+        if (searchTerm === '') {
+            clearSearch();
+        } else {
+            await performGlobalSearch(searchTerm);
+        }
+    }
 }
 
 // 处理搜索键盘事件
@@ -316,7 +345,17 @@ function clearSearch() {
         searchClear.style.display = 'none';
     }
     
-    filterKeys();
+    // 根据当前搜索模式清除不同的状态
+    if (currentSearchMode === 'key') {
+        // Key搜索模式：显示所有key
+        filterKeys();
+    } else if (currentSearchMode === 'global') {
+        // 全局搜索模式：清除搜索结果，显示所有key
+        searchResults = [];
+        filterKeys(); // 显示所有key
+    }
+    
+    hideEmptyState();
 }
 
 // 过滤Keys
@@ -1049,12 +1088,13 @@ function navigateToParent() {
     loadDirectory(parentDir);
 }
 
-// 导出全局函数
+// 暴露全局函数供HTML调用
 window.selectKey = selectKey;
+window.clearSearch = clearSearch;
 window.formatJSON = formatJSON;
 window.validateJSON = validateJSON;
 window.copyToClipboard = copyToClipboard;
-window.clearSearch = clearSearch;
+window.saveRecord = saveRecord;
 window.deleteRecord = deleteRecord;
 window.refreshData = refreshData;
 window.showSettingsModal = showSettingsModal;
@@ -1063,4 +1103,217 @@ window.saveSettings = saveSettings;
 window.browseDbFile = browseDbFile;
 window.closeFileBrowserModal = closeFileBrowserModal;
 window.selectCurrentFile = selectCurrentFile;
-window.navigateToParent = navigateToParent; 
+window.navigateToParent = navigateToParent;
+window.setSearchMode = setSearchMode;
+
+// 设置搜索模式
+function setSearchMode(mode) {
+    console.log('setSearchMode called with mode:', mode);
+    currentSearchMode = mode;
+    
+    // 更新按钮状态
+    const keySearchBtn = document.getElementById('keySearchMode');
+    const globalSearchBtn = document.getElementById('globalSearchMode');
+    const searchInput = document.getElementById('keySearch');
+    
+    console.log('Elements found:', {
+        keySearchBtn: !!keySearchBtn,
+        globalSearchBtn: !!globalSearchBtn,
+        searchInput: !!searchInput
+    });
+    
+    if (keySearchBtn && globalSearchBtn) {
+        keySearchBtn.classList.toggle('active', mode === 'key');
+        globalSearchBtn.classList.toggle('active', mode === 'global');
+    }
+    
+    // 更新搜索框占位符
+    if (searchInput) {
+        if (mode === 'key') {
+            searchInput.placeholder = '搜索 Keys...';
+        } else {
+            searchInput.placeholder = '全局搜索内容...';
+        }
+    }
+    
+    // 清除当前搜索并重新处理
+    const currentSearchTerm = searchInput?.value.trim() || '';
+    clearSearch();
+    
+    if (currentSearchTerm) {
+        searchInput.value = currentSearchTerm;
+        handleSearchInput({ target: searchInput });
+    }
+}
+
+// 执行全局搜索
+async function performGlobalSearch(searchTerm) {
+    if (isGlobalSearching) return;
+    
+    isGlobalSearching = true;
+    showSearchingState();
+    
+    try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(searchTerm)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || '搜索失败');
+        }
+        
+        searchResults = data.results || [];
+        displayGlobalSearchResults(searchResults, searchTerm);
+        
+    } catch (error) {
+        console.error('全局搜索失败:', error);
+        showNotification('搜索失败: ' + error.message, 'error');
+        showEmptySearchResults();
+    } finally {
+        isGlobalSearching = false;
+        hideSearchingState();
+    }
+}
+
+// 显示全局搜索结果
+function displayGlobalSearchResults(results, searchTerm) {
+    const keysList = document.getElementById('keysList');
+    if (!keysList) return;
+    
+    keysList.innerHTML = '';
+    
+    if (results.length === 0) {
+        showEmptySearchResults();
+        return;
+    }
+    
+    // 添加搜索摘要
+    const summaryElement = createSearchSummary(results.length, searchTerm);
+    keysList.appendChild(summaryElement);
+    
+    // 添加搜索结果
+    results.forEach(result => {
+        const resultElement = createSearchResultElement(result, searchTerm);
+        keysList.appendChild(resultElement);
+    });
+    
+    hideEmptyState();
+}
+
+// 创建搜索摘要元素
+function createSearchSummary(totalResults, searchTerm) {
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'search-summary';
+    summaryDiv.innerHTML = `
+        找到 <strong>${totalResults}</strong> 个匹配项，搜索词：<strong>"${escapeHtml(searchTerm)}"</strong>
+    `;
+    return summaryDiv;
+}
+
+// 创建搜索结果元素
+function createSearchResultElement(result, searchTerm) {
+    const resultDiv = document.createElement('div');
+    resultDiv.className = 'search-result-item';
+    resultDiv.setAttribute('data-key', result.key);
+    resultDiv.onclick = () => selectSearchResult(result.key);
+    
+    // 高亮搜索词
+    const highlightedKey = highlightSearchTerm(result.key, searchTerm);
+    const highlightedPreview = highlightSearchTerm(result.preview, searchTerm);
+    
+    // 创建匹配标签
+    const matchBadges = [];
+    if (result.match_in_key) {
+        matchBadges.push('<span class="match-badge key-match">Key匹配</span>');
+    }
+    if (result.match_in_value) {
+        matchBadges.push('<span class="match-badge value-match">内容匹配</span>');
+    }
+    
+    resultDiv.innerHTML = `
+        <div class="search-result-content">
+            <div class="search-result-icon">
+                <i class="fas fa-search"></i>
+            </div>
+            <div class="search-result-info">
+                <div class="search-result-key">${highlightedKey}</div>
+                <div class="search-result-preview">${highlightedPreview}</div>
+                <div class="search-result-matches">
+                    ${matchBadges.join('')}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    return resultDiv;
+}
+
+// 高亮搜索词
+function highlightSearchTerm(text, searchTerm) {
+    if (!text || !searchTerm) return escapeHtml(text || '');
+    
+    const escapedText = escapeHtml(text);
+    const escapedSearchTerm = escapeHtml(searchTerm);
+    const regex = new RegExp(`(${escapedSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    
+    return escapedText.replace(regex, '<mark style="background-color: #ffc107; color: #000; padding: 1px 3px; border-radius: 2px;">$1</mark>');
+}
+
+// 选择搜索结果
+async function selectSearchResult(key) {
+    // 清除其他选中状态
+    document.querySelectorAll('.search-result-item.selected').forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    // 设置当前选中状态
+    const selectedItem = document.querySelector(`.search-result-item[data-key="${CSS.escape(key)}"]`);
+    if (selectedItem) {
+        selectedItem.classList.add('selected');
+    }
+    
+    // 加载并显示记录
+    await selectKey(key);
+}
+
+// 显示搜索中状态
+function showSearchingState() {
+    const keysList = document.getElementById('keysList');
+    if (keysList) {
+        keysList.innerHTML = `
+            <div class="search-loading" style="padding: 20px; text-align: center; color: var(--text-muted);">
+                <i class="fas fa-spinner fa-spin" style="font-size: 1.2em; margin-bottom: 8px;"></i>
+                <div>正在搜索...</div>
+            </div>
+        `;
+    }
+}
+
+// 隐藏搜索中状态
+function hideSearchingState() {
+    // 这个函数在搜索完成后会被displayGlobalSearchResults覆盖
+}
+
+// 显示空搜索结果
+function showEmptySearchResults() {
+    const keysList = document.getElementById('keysList');
+    const emptyState = document.getElementById('emptyState');
+    
+    if (keysList) {
+        keysList.innerHTML = '';
+    }
+    
+    if (emptyState) {
+        emptyState.style.display = 'flex';
+    }
+}
+
+// 隐藏空状态
+function hideEmptyState() {
+    const emptyState = document.getElementById('emptyState');
+    if (emptyState) {
+        emptyState.style.display = 'none';
+    }
+} 

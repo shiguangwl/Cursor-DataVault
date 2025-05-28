@@ -168,6 +168,52 @@ class DatabaseManager:
                 
         except Exception as e:
             return False, f"删除失败: {e}"
+    
+    def search_records(self, search_term):
+        """全局搜索记录"""
+        try:
+            if not search_term:
+                return []
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                # 搜索key和value中包含搜索词的记录
+                cursor.execute("""
+                    SELECT key, value FROM main.ItemTable 
+                    WHERE key LIKE ? OR value LIKE ?
+                    ORDER BY key
+                """, (f'%{search_term}%', f'%{search_term}%'))
+                
+                results = []
+                for row in cursor.fetchall():
+                    record_key, blob_data = row
+                    
+                    # 解码value数据以便预览
+                    preview_value = ""
+                    if blob_data:
+                        try:
+                            if isinstance(blob_data, bytes):
+                                raw_string = blob_data.decode('utf-8')
+                            else:
+                                raw_string = str(blob_data)
+                            
+                            # 限制预览长度
+                            preview_value = raw_string[:200] + "..." if len(raw_string) > 200 else raw_string
+                        except UnicodeDecodeError:
+                            preview_value = "[二进制数据]"
+                    
+                    results.append({
+                        "key": record_key,
+                        "preview": preview_value,
+                        "match_in_key": search_term.lower() in record_key.lower(),
+                        "match_in_value": search_term.lower() in preview_value.lower()
+                    })
+                
+                return results
+                
+        except Exception as e:
+            print(f"搜索失败: {e}")
+            return []
 
 # 初始化数据库管理器
 try:
@@ -287,6 +333,28 @@ def update_config():
             return jsonify({"success": False, "error": "配置保存失败"}), 500
     except Exception as e:
         print(f"更新配置失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/search', methods=['GET'])
+def search_records():
+    """全局搜索API"""
+    try:
+        if db_manager is None:
+            return jsonify({"success": False, "error": "数据库连接失败"}), 500
+        
+        search_term = request.args.get('q', '').strip()
+        if not search_term:
+            return jsonify({"success": False, "error": "请提供搜索关键词"}), 400
+        
+        results = db_manager.search_records(search_term)
+        return jsonify({
+            "success": True, 
+            "results": results,
+            "total": len(results),
+            "search_term": search_term
+        })
+    except Exception as e:
+        print(f"搜索API错误: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/browse', methods=['GET'])

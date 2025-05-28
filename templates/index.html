@@ -82,6 +82,16 @@
                     
                     <!-- 搜索栏 -->
                     <div class="search-section">
+                        <div class="search-modes">
+                            <button class="search-mode-btn active" id="keySearchMode" onclick="setSearchMode('key')" title="按Key搜索">
+                                <i class="fas fa-key"></i>
+                                <span>Key搜索</span>
+                            </button>
+                            <button class="search-mode-btn" id="globalSearchMode" onclick="setSearchMode('global')" title="全局内容搜索">
+                                <i class="fas fa-search"></i>
+                                <span>全局搜索</span>
+                            </button>
+                        </div>
                         <div class="search-box">
                             <i class="fas fa-search search-icon"></i>
                             <input 
