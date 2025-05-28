@@ -1,0 +1,743 @@
+// ===== 全新现代化JavaScript应用 =====
+
+// 全局变量
+let currentSelectedKey = null;
+let allKeys = [];
+let filteredKeys = [];
+let jsonEditorInstance = null;
+
+// 应用初始化
+document.addEventListener('DOMContentLoaded', function() {
+    initializeApp();
+});
+
+// 初始化应用
+async function initializeApp() {
+    showLoadingState();
+    
+    try {
+        await loadKeys();
+        initializeCodeMirror();
+        setupEventListeners();
+        setupKeyboardShortcuts();
+        showWelcomeScreen();
+        
+        // 显示加载完成通知
+        showNotification('应用加载完成', 'success');
+    } catch (error) {
+        console.error('应用初始化失败:', error);
+        showNotification('应用初始化失败: ' + error.message, 'error');
+    }
+    
+    hideLoadingState();
+}
+
+// 显示加载状态
+function showLoadingState() {
+    document.body.style.cursor = 'wait';
+}
+
+// 隐藏加载状态
+function hideLoadingState() {
+    document.body.style.cursor = 'default';
+}
+
+// 设置事件监听器
+function setupEventListeners() {
+    const searchInput = document.getElementById('keySearch');
+    const searchClear = document.getElementById('searchClear');
+    
+    // 搜索功能
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearchInput);
+        searchInput.addEventListener('keydown', handleSearchKeydown);
+    }
+    
+    // 清除搜索
+    if (searchClear) {
+        searchClear.addEventListener('click', clearSearch);
+    }
+    
+    // 窗口调整大小
+    window.addEventListener('resize', handleWindowResize);
+}
+
+// 设置键盘快捷键
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + K 聚焦搜索
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            document.getElementById('keySearch')?.focus();
+        }
+        
+        // Escape 清除搜索或关闭模态框
+        if (e.key === 'Escape') {
+            const activeModal = document.querySelector('.modal-overlay[style*="display: flex"]');
+            if (activeModal) {
+                closeConfirmModal();
+            } else {
+                clearSearch();
+            }
+        }
+        
+        // Ctrl/Cmd + S 保存当前编辑
+        if ((e.ctrlKey || e.metaKey) && e.key === 's' && currentSelectedKey) {
+            e.preventDefault();
+            saveRecord();
+        }
+        
+        // Ctrl/Cmd + F 格式化JSON
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f' && currentSelectedKey) {
+            e.preventDefault();
+            formatJSON();
+        }
+    });
+}
+
+// 初始化CodeMirror编辑器
+function initializeCodeMirror() {
+    const textarea = document.getElementById('jsonEditor');
+    if (!textarea) return;
+    
+    jsonEditorInstance = CodeMirror.fromTextArea(textarea, {
+        mode: 'application/json',
+        theme: 'material-darker',
+        lineNumbers: true,
+        indentUnit: 2,
+        smartIndent: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        lineWrapping: true,
+        foldGutter: true,
+        gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+        styleActiveLine: true,
+        extraKeys: {
+            "Ctrl-Q": function(cm) { cm.foldCode(cm.getCursor()); },
+            "Ctrl-Space": "autocomplete",
+            // 添加搜索快捷键
+            "Ctrl-F": "findPersistent",
+            "Cmd-F": "findPersistent",
+            "Ctrl-G": "findNext",
+            "Cmd-G": "findNext",
+            "Shift-Ctrl-G": "findPrev",
+            "Shift-Cmd-G": "findPrev",
+            "Shift-Ctrl-F": "replace",
+            "Shift-Cmd-F": "replace",
+            "Shift-Ctrl-R": "replaceAll",
+            "Shift-Cmd-R": "replaceAll"
+        }
+    });
+    
+    // 监听编辑器内容变化
+    jsonEditorInstance.on('change', function() {
+        updateEditorStatus();
+    });
+    
+    // 窗口大小调整时刷新编辑器
+    window.addEventListener('resize', () => {
+        setTimeout(() => {
+            if (jsonEditorInstance) {
+                jsonEditorInstance.refresh();
+            }
+        }, 100);
+    });
+}
+
+// 加载所有Keys
+async function loadKeys() {
+    try {
+        const response = await fetch('/api/keys');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        allKeys = data.keys || [];
+        filteredKeys = [...allKeys];
+        
+        updateKeysList();
+        updateKeyCount();
+        
+    } catch (error) {
+        console.error('加载Keys失败:', error);
+        throw error;
+    }
+}
+
+// 更新Keys列表显示
+function updateKeysList() {
+    const keysList = document.getElementById('keysList');
+    const emptyState = document.getElementById('emptyState');
+    
+    if (!keysList) return;
+    
+    keysList.innerHTML = '';
+    
+    if (filteredKeys.length === 0) {
+        keysList.style.display = 'none';
+        if (emptyState) emptyState.style.display = 'flex';
+        return;
+    }
+    
+    keysList.style.display = 'flex';
+    if (emptyState) emptyState.style.display = 'none';
+    
+    filteredKeys.forEach((key) => {
+        const keyItem = createKeyElement(key);
+        keysList.appendChild(keyItem);
+    });
+}
+
+// 创建Key元素
+function createKeyElement(key) {
+    const keyItem = document.createElement('div');
+    keyItem.className = 'key-item';
+    keyItem.dataset.key = key;
+    keyItem.onclick = () => selectKey(key);
+    
+    // 添加选中状态
+    if (currentSelectedKey === key) {
+        keyItem.classList.add('selected');
+    }
+    
+    // 安全处理key
+    const safeKey = escapeHtml(key);
+    
+    keyItem.innerHTML = `
+        <div class="key-content">
+            <div class="key-icon">
+                <i class="fas fa-key"></i>
+            </div>
+            <div class="key-info">
+                <span class="key-name" title="${safeKey}">${safeKey}</span>
+                <span class="key-type">String</span>
+            </div>
+        </div>
+    `;
+    
+    return keyItem;
+}
+
+// HTML转义
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 更新Key计数
+function updateKeyCount() {
+    const totalKeysElement = document.getElementById('totalKeys');
+    if (totalKeysElement) {
+        totalKeysElement.textContent = filteredKeys.length;
+        
+        // 添加动画效果
+        totalKeysElement.style.transform = 'scale(1.1)';
+        setTimeout(() => {
+            totalKeysElement.style.transform = 'scale(1)';
+        }, 200);
+    }
+}
+
+// 处理搜索输入
+function handleSearchInput(event) {
+    const searchInput = event.target;
+    const searchClear = document.getElementById('searchClear');
+    
+    if (searchClear) {
+        searchClear.style.display = searchInput.value ? 'flex' : 'none';
+    }
+    
+    filterKeys();
+}
+
+// 处理搜索键盘事件
+function handleSearchKeydown(event) {
+    if (event.key === 'Escape') {
+        clearSearch();
+    }
+}
+
+// 清除搜索
+function clearSearch() {
+    const searchInput = document.getElementById('keySearch');
+    const searchClear = document.getElementById('searchClear');
+    
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    
+    if (searchClear) {
+        searchClear.style.display = 'none';
+    }
+    
+    filterKeys();
+}
+
+// 过滤Keys
+function filterKeys() {
+    const searchInput = document.getElementById('keySearch');
+    const searchTerm = (searchInput?.value || '').toLowerCase().trim();
+    
+    let keysToFilter = allKeys;
+    
+    // 根据搜索词过滤
+    if (searchTerm) {
+        filteredKeys = keysToFilter.filter(key => 
+            key.toLowerCase().includes(searchTerm)
+        );
+    } else {
+        filteredKeys = [...keysToFilter];
+    }
+    
+    updateKeysList();
+    updateKeyCount();
+}
+
+// 选择Key
+async function selectKey(key) {
+    if (currentSelectedKey === key) return;
+    
+    try {
+        // 更新选中状态
+        const previousKey = currentSelectedKey;
+        currentSelectedKey = key;
+        
+        // 更新UI选中状态
+        document.querySelectorAll('.key-item').forEach(item => {
+            if (item.dataset.key === key) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+        
+        // 显示编辑器面板
+        showEditorPanel();
+        
+        // 更新编辑器信息
+        updateEditorInfo(key);
+        
+        // 加载记录
+        await loadRecord(key);
+    } catch (error) {
+        console.error('选择Key失败:', error);
+        showNotification('加载数据失败: ' + error.message, 'error');
+    }
+}
+
+// 显示编辑器面板
+function showEditorPanel() {
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    const editorPanel = document.getElementById('editorPanel');
+    
+    if (welcomeScreen) welcomeScreen.style.display = 'none';
+    if (editorPanel) editorPanel.style.display = 'flex';
+    
+    // 刷新编辑器
+    setTimeout(() => {
+        if (jsonEditorInstance) {
+            jsonEditorInstance.refresh();
+        }
+    }, 100);
+}
+
+// 显示欢迎屏幕
+function showWelcomeScreen() {
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    const editorPanel = document.getElementById('editorPanel');
+    
+    if (welcomeScreen) welcomeScreen.style.display = 'flex';
+    if (editorPanel) editorPanel.style.display = 'none';
+    
+    currentSelectedKey = null;
+    
+    // 清除选中状态
+    document.querySelectorAll('.key-item').forEach(item => {
+        item.classList.remove('active');
+    });
+}
+
+// 更新编辑器信息
+function updateEditorInfo(key) {
+    const currentKeyName = document.getElementById('currentKeyName');
+    const keyTypeBadge = document.getElementById('keyTypeBadge');
+    const keySize = document.getElementById('keySize');
+    
+    if (currentKeyName) {
+        currentKeyName.textContent = key;
+    }
+    
+    if (keyTypeBadge) {
+        keyTypeBadge.textContent = 'String'; // 可以根据实际类型更新
+    }
+    
+    if (keySize && jsonEditorInstance) {
+        const content = jsonEditorInstance.getValue();
+        const bytes = new Blob([content]).size;
+        keySize.textContent = formatBytes(bytes);
+    }
+}
+
+// 格式化字节数
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// 加载记录数据
+async function loadRecord(key) {
+    try {
+        updateEditorStatus('正在加载...');
+        
+        const response = await fetch(`/api/record/${encodeURIComponent(key)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || '加载失败');
+        }
+        
+        displayRecord(result.data);
+        updateEditorStatus('就绪');
+        
+    } catch (error) {
+        console.error('加载记录失败:', error);
+        showNotification('加载记录失败: ' + error.message, 'error');
+        updateEditorStatus('加载失败');
+    }
+}
+
+// 显示记录数据
+function displayRecord(data) {
+    if (!jsonEditorInstance) return;
+    
+    let jsonContent = '';
+    
+    if (data && data.value !== undefined && data.value !== null) {
+        try {
+            if (data.is_json && typeof data.value === 'object') {
+                // 如果是JSON对象，格式化显示
+                jsonContent = JSON.stringify(data.value, null, 2);
+            } else if (data.is_json && typeof data.value === 'string') {
+                // 如果是JSON字符串，尝试解析并格式化
+                try {
+                    const parsedValue = JSON.parse(data.value);
+                    jsonContent = JSON.stringify(parsedValue, null, 2);
+                } catch (e) {
+                    jsonContent = data.value;
+                }
+            } else {
+                // 如果不是JSON，直接显示原始值
+                jsonContent = typeof data.value === 'string' ? data.value : JSON.stringify(data.value, null, 2);
+            }
+        } catch (e) {
+            // 如果有任何错误，显示原始值
+            jsonContent = data.raw_value || data.value?.toString() || '';
+        }
+    } else {
+        jsonContent = '';
+    }
+    
+    jsonEditorInstance.setValue(jsonContent);
+    jsonEditorInstance.clearHistory();
+    
+    // 更新大小信息
+    updateEditorInfo(currentSelectedKey);
+}
+
+// 更新编辑器状态
+function updateEditorStatus(status = '就绪') {
+    const statusIndicator = document.getElementById('statusIndicator');
+    if (statusIndicator) {
+        const icon = statusIndicator.querySelector('i');
+        const text = statusIndicator.querySelector('i').nextSibling;
+        
+        if (status === '就绪') {
+            icon.style.color = '#10b981';
+            icon.className = 'fas fa-circle';
+        } else if (status.includes('失败') || status.includes('错误')) {
+            icon.style.color = '#ef4444';
+            icon.className = 'fas fa-exclamation-circle';
+        } else {
+            icon.style.color = '#f59e0b';
+            icon.className = 'fas fa-circle';
+        }
+        
+        text.textContent = ' ' + status;
+    }
+}
+
+// 格式化JSON
+function formatJSON() {
+    if (!jsonEditorInstance || !currentSelectedKey) {
+        showNotification('请先选择一个Key', 'warning');
+        return;
+    }
+    
+    try {
+        const content = jsonEditorInstance.getValue();
+        const parsed = JSON.parse(content);
+        const formatted = JSON.stringify(parsed, null, 2);
+        
+        jsonEditorInstance.setValue(formatted);
+        showNotification('JSON格式化完成', 'success');
+        updateEditorStatus('已格式化');
+        
+    } catch (error) {
+        showNotification('JSON格式错误: ' + error.message, 'error');
+        updateEditorStatus('格式错误');
+    }
+}
+
+// 验证JSON
+function validateJSON() {
+    if (!jsonEditorInstance || !currentSelectedKey) {
+        showNotification('请先选择一个Key', 'warning');
+        return;
+    }
+    
+    try {
+        const content = jsonEditorInstance.getValue();
+        JSON.parse(content);
+        showNotification('JSON格式有效', 'success');
+        updateEditorStatus('格式有效');
+    } catch (error) {
+        showNotification('JSON格式错误: ' + error.message, 'error');
+        updateEditorStatus('格式错误');
+    }
+}
+
+// 复制到剪贴板
+async function copyToClipboard() {
+    if (!jsonEditorInstance || !currentSelectedKey) {
+        showNotification('请先选择一个Key', 'warning');
+        return;
+    }
+    
+    try {
+        const content = jsonEditorInstance.getValue();
+        await navigator.clipboard.writeText(content);
+        showNotification('已复制到剪贴板', 'success');
+    } catch (error) {
+        console.error('复制失败:', error);
+        showNotification('复制失败', 'error');
+    }
+}
+
+// 保存记录
+async function saveRecord() {
+    if (!currentSelectedKey) {
+        showNotification('请先选择一个Key', 'warning');
+        return;
+    }
+    
+    try {
+        updateEditorStatus('正在保存...');
+        
+        const content = jsonEditorInstance.getValue();
+        
+        // 验证JSON（如果不为空）
+        if (content.trim()) {
+            try {
+                JSON.parse(content);
+            } catch (e) {
+                // 如果不是有效JSON，询问用户是否继续
+                if (!confirm('内容不是有效的JSON格式，是否作为普通文本保存？')) {
+                    updateEditorStatus('保存取消');
+                    return;
+                }
+            }
+        }
+        
+        const response = await fetch(`/api/record/${encodeURIComponent(currentSelectedKey)}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ value: content })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || result.message || '保存失败');
+        }
+        
+        showNotification('保存成功', 'success');
+        updateEditorStatus('已保存');
+        
+        // 更新大小信息
+        updateEditorInfo(currentSelectedKey);
+        
+    } catch (error) {
+        console.error('保存失败:', error);
+        showNotification('保存失败: ' + error.message, 'error');
+        updateEditorStatus('保存失败');
+    }
+}
+
+// 删除记录
+function deleteRecord() {
+    if (!currentSelectedKey) {
+        showNotification('请先选择一个Key', 'warning');
+        return;
+    }
+    
+    showConfirmModal(
+        '确认删除',
+        `您确定要删除Key "${currentSelectedKey}" 吗？此操作无法撤销。`,
+        async () => {
+            try {
+                const response = await fetch(`/api/record/${encodeURIComponent(currentSelectedKey)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || result.message || '删除失败');
+                }
+                
+                showNotification('删除成功', 'success');
+                
+                // 从各种列表中移除
+                allKeys = allKeys.filter(key => key !== currentSelectedKey);
+                filteredKeys = filteredKeys.filter(key => key !== currentSelectedKey);
+                
+                // 更新本地存储
+                localStorage.setItem('favorites', JSON.stringify(favorites));
+                localStorage.setItem('recentKeys', JSON.stringify(recentKeys));
+                
+                // 更新显示
+                updateKeysList();
+                updateKeyCount();
+                showWelcomeScreen();
+                
+            } catch (error) {
+                console.error('删除失败:', error);
+                showNotification('删除失败: ' + error.message, 'error');
+            }
+        }
+    );
+}
+
+// 显示确认模态框
+function showConfirmModal(title, message, onConfirm) {
+    const modal = document.getElementById('confirmModal');
+    const titleElement = document.getElementById('confirmTitle');
+    const messageElement = document.getElementById('confirmMessage');
+    const confirmButton = document.getElementById('confirmButton');
+    
+    if (!modal) return;
+    
+    titleElement.textContent = title;
+    messageElement.textContent = message;
+    
+    modal.style.display = 'flex';
+    
+    // 存储确认回调
+    confirmButton.onclick = () => {
+        onConfirm();
+        closeConfirmModal();
+    };
+}
+
+// 关闭确认模态框
+function closeConfirmModal() {
+    const modal = document.getElementById('confirmModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// 确认操作
+function confirmAction() {
+    // 这个函数会被confirmButton.onclick覆盖
+}
+
+// 显示通知
+function showNotification(message, type = 'info', duration = 3000) {
+    const container = document.getElementById('notificationContainer');
+    if (!container) return;
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    
+    const icon = getNotificationIcon(type);
+    notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <i class="${icon}" style="flex-shrink: 0;"></i>
+            <span>${escapeHtml(message)}</span>
+        </div>
+    `;
+    
+    container.appendChild(notification);
+    
+    // 自动移除
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, duration);
+}
+
+// 获取通知图标
+function getNotificationIcon(type) {
+    const icons = {
+        'success': 'fas fa-check-circle',
+        'error': 'fas fa-exclamation-circle',
+        'warning': 'fas fa-exclamation-triangle',
+        'info': 'fas fa-info-circle'
+    };
+    return icons[type] || icons.info;
+}
+
+// 处理窗口大小调整
+function handleWindowResize() {
+    if (jsonEditorInstance) {
+        setTimeout(() => jsonEditorInstance.refresh(), 100);
+    }
+}
+
+// 兼容旧函数名
+function refreshKeys() {
+    refreshData();
+}
+
+function updateRecord() {
+    saveRecord();
+}
+
+function formatJson() {
+    formatJSON();
+}
+
+// 导出全局函数
+window.selectKey = selectKey;
+window.formatJSON = formatJSON;
+window.validateJSON = validateJSON;
+window.copyToClipboard = copyToClipboard;
+window.clearSearch = clearSearch;
+window.deleteRecord = deleteRecord; 

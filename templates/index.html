@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataVault - 现代化数据库管理平台</title>
+    
+    <!-- 字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- 图标 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- CodeMirror -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/material-darker.min.css">
+    
+    <!-- 自定义样式 -->
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    
+    <!-- CodeMirror Addons CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/dialog/dialog.css">
+</head>
+<body>
+    <!-- 动态背景 -->
+    <div class="background-animation">
+        <div class="floating-shape shape-1"></div>
+        <div class="floating-shape shape-2"></div>
+        <div class="floating-shape shape-3"></div>
+        <div class="floating-shape shape-4"></div>
+        <div class="floating-shape shape-5"></div>
+    </div>
+
+    <!-- 主应用容器 -->
+    <div class="app-wrapper">
+        <!-- 顶部导航栏 -->
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <div class="brand-logo">
+                    <div class="logo-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <div class="brand-info">
+                        <h1 class="brand-title">DataVault</h1>
+                        <span class="brand-subtitle">现代化数据库管理平台</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="nav-stats">
+                <div class="stat-item">
+                    <div class="stat-icon">
+                        <i class="fas fa-key"></i>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="totalKeys">0</span>
+                        <span class="stat-label">总计Keys</span>
+                    </div>
+                </div>
+                
+                <div class="nav-actions">
+                    <button class="action-btn refresh-btn" onclick="refreshData()" title="刷新数据">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="action-btn settings-btn" title="设置">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 左侧面板 -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2 class="sidebar-title">
+                        <i class="fas fa-list-ul"></i>
+                        Keys 管理
+                    </h2>
+                    
+                    <!-- 搜索栏 -->
+                    <div class="search-section">
+                        <div class="search-box">
+                            <i class="fas fa-search search-icon"></i>
+                            <input 
+                                type="text" 
+                                id="keySearch" 
+                                class="search-input" 
+                                placeholder="搜索 Keys..."
+                                autocomplete="off"
+                            >
+                            <button class="search-clear" id="searchClear" onclick="clearSearch()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Keys 列表 -->
+                <div class="keys-container">
+                    <div class="keys-list" id="keysList">
+                        {% for key in keys %}
+                        <div class="key-item" onclick="selectKey('{{ key|e }}')" data-key="{{ key|e }}">
+                            <div class="key-content">
+                                <div class="key-icon">
+                                    <i class="fas fa-key"></i>
+                                </div>
+                                <div class="key-info">
+                                    <span class="key-name" title="{{ key|e }}">{{ key|e }}</span>
+                                    <span class="key-type">String</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- 空状态 -->
+                    <div class="empty-state" id="emptyState" style="display: none;">
+                        <div class="empty-icon">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h3 class="empty-title">未找到匹配项</h3>
+                        <p class="empty-description">尝试使用不同的搜索关键词</p>
+                        <button class="btn-primary" onclick="clearSearch()">
+                            <i class="fas fa-times"></i>
+                            清除搜索
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 右侧内容区域 -->
+            <section class="content-area">
+                <!-- 欢迎屏幕 -->
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-content">
+                        <div class="welcome-icon">
+                            <i class="fas fa-rocket"></i>
+                        </div>
+                        <h2 class="welcome-title">欢迎使用 DataVault</h2>
+                        <p class="welcome-description">
+                            选择左侧的任意 Key 开始编辑和管理您的数据
+                        </p>
+                        
+                        <div class="feature-grid">
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-code"></i>
+                                </div>
+                                <h4>语法高亮</h4>
+                                <p>智能 JSON 语法高亮和格式化</p>
+                            </div>
+                            
+                            <div class="feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-search"></i>
+                                </div>
+                                <h4>快速搜索</h4>
+                                <p>瞬间找到您需要的任何 Key</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 编辑器区域 -->
+                <div class="editor-panel" id="editorPanel" style="display: none;">
+                    <!-- 编辑器头部 -->
+                    <div class="editor-header">
+                        <div class="editor-info">
+                            <div class="current-key-info">
+                                <div class="key-badge">
+                                    <i class="fas fa-key"></i>
+                                    <span id="currentKeyName">未选择</span>
+                                </div>
+                                <div class="key-meta">
+                                    <span class="key-size" id="keySize">0 bytes</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="editor-actions">
+                            <div class="action-group">
+                                <button class="action-btn secondary" onclick="formatJSON()" title="格式化">
+                                    <i class="fas fa-magic"></i>
+                                    格式化  
+                                </button>
+                                <button class="action-btn secondary" onclick="copyToClipboard()" title="复制">
+                                    <i class="fas fa-copy"></i>
+                                    复制
+                                </button>
+                                <button class="action-btn secondary" onclick="validateJSON()" title="验证">
+                                    <i class="fas fa-check"></i>
+                                    验证
+                                </button>
+                            </div>
+                            
+                            <div class="action-group primary-actions">
+                                <button class="action-btn danger" onclick="deleteRecord()" title="删除">
+                                    <i class="fas fa-trash"></i>
+                                    删除
+                                </button>
+                                <button class="action-btn primary" onclick="saveRecord()" title="保存">
+                                    <i class="fas fa-save"></i>
+                                    保存更改
+                                </button>
+                                <button class="action-btn primary" onclick="tryJSON()" title="运行/测试 JSON">
+                                    <i class="fas fa-play"></i>
+                                    试试
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 编辑器主体 -->
+                    <div class="editor-body">
+                        <div class="editor-wrapper">
+                            <div class="editor-toolbar">
+                                <div class="toolbar-left">
+                                    <span class="editor-label">JSON 数据编辑器</span>
+                                </div>
+                                <div class="toolbar-right">
+                                    <div class="editor-status">
+                                        <span class="status-indicator" id="statusIndicator">
+                                            <i class="fas fa-circle"></i>
+                                            就绪
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="code-editor-container">
+                                <textarea id="jsonEditor" class="code-editor"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 通知系统 -->
+    <div class="notification-container" id="notificationContainer"></div>
+    
+    <!-- 上下文菜单 -->
+    <div class="context-menu" id="contextMenu" style="display: none;">
+        <div class="menu-item" onclick="copyKeyName()">
+            <i class="fas fa-copy"></i>
+            复制 Key 名称
+        </div>
+        <div class="menu-item" onclick="duplicateKey()">
+            <i class="fas fa-clone"></i>
+            复制 Key
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-item danger" onclick="deleteKeyFromMenu()">
+            <i class="fas fa-trash"></i>
+            删除 Key
+        </div>
+    </div>
+
+    <!-- 确认对话框 -->
+    <div class="modal-overlay" id="confirmModal" style="display: none;">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title" id="confirmTitle">确认操作</h3>
+                </div>
+                <div class="modal-body">
+                    <p id="confirmMessage">您确定要执行此操作吗？</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeConfirmModal()">取消</button>
+                    <button class="btn-danger" id="confirmButton" onclick="confirmAction()">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 脚本 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/display/autorefresh.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/selection/active-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/fold/brace-fold.min.js"></script>
+    
+    <!-- CodeMirror Search Addons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/search/searchcursor.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/search/search.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/dialog/dialog.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/display/fullscreen.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/search/jump-to-line.min.js"></script>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
