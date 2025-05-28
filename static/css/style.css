@@ -816,6 +816,7 @@ body {
 
 .CodeMirror-scroll {
     overflow: auto !important;
+    padding-top: 30px;
 }
 
 .CodeMirror-gutters {
