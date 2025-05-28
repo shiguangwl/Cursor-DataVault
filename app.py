@@ -3,13 +3,47 @@ import sqlite3
 import json
 import os
 from datetime import datetime
+import glob
 
 app = Flask(__name__)
 
+# 配置文件路径
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+
+# 默认配置
+DEFAULT_CONFIG = {
+    'db_path': '/Users/mac/Library/Application Support/Cursor/User/globalStorage/state.vscdb'
+}
+
+def load_config():
+    """加载配置文件"""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            # 如果配置文件不存在，创建默认配置
+            save_config(DEFAULT_CONFIG)
+            return DEFAULT_CONFIG
+    except Exception as e:
+        print(f"加载配置文件失败: {e}")
+        return DEFAULT_CONFIG
+
+def save_config(config):
+    """保存配置文件"""
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"保存配置文件失败: {e}")
+        return False
+
 class DatabaseManager:
     def __init__(self, db_path=None):
+        config = load_config()
         if db_path is None:
-            self.db_path = '/Users/mac/Library/Application Support/Cursor/User/globalStorage/state.vscdb'
+            self.db_path = config.get('db_path', DEFAULT_CONFIG['db_path'])
         else:
             self.db_path = db_path
     
@@ -137,7 +171,9 @@ class DatabaseManager:
 
 # 初始化数据库管理器
 try:
-    db_manager = DatabaseManager()
+    # 加载配置
+    config = load_config()
+    db_manager = DatabaseManager(config.get('db_path'))
     print(f"数据库连接成功: {db_manager.db_path}")
 except Exception as e:
     print(f"数据库初始化失败: {e}")
@@ -216,6 +252,95 @@ def delete_record(key):
         print(f"删除记录API错误: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """获取当前配置"""
+    try:
+        config = load_config()
+        return jsonify({"success": True, "config": config})
+    except Exception as e:
+        print(f"获取配置失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/config', methods=['PUT'])
+def update_config():
+    """更新配置"""
+    try:
+        data = request.get_json()
+        config = load_config()
+        
+        # 更新配置
+        if 'db_path' in data:
+            config['db_path'] = data['db_path']
+        
+        # 保存配置
+        if save_config(config):
+            # 重新初始化数据库管理器
+            global db_manager
+            try:
+                db_manager = DatabaseManager(config.get('db_path'))
+                print(f"数据库重新连接成功: {db_manager.db_path}")
+                return jsonify({"success": True, "message": "配置已更新", "config": config})
+            except Exception as e:
+                return jsonify({"success": False, "error": f"配置已保存，但数据库连接失败: {str(e)}"}), 500
+        else:
+            return jsonify({"success": False, "error": "配置保存失败"}), 500
+    except Exception as e:
+        print(f"更新配置失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/browse', methods=['GET'])
+def browse_files():
+    """浏览文件系统"""
+    try:
+        # 获取目录路径参数
+        directory = request.args.get('directory', os.path.expanduser('~'))
+        
+        # 确保路径存在
+        if not os.path.exists(directory):
+            return jsonify({"success": False, "error": f"目录不存在: {directory}"}), 404
+        
+        # 确保是目录
+        if not os.path.isdir(directory):
+            return jsonify({"success": False, "error": f"不是有效的目录: {directory}"}), 400
+        
+        # 获取父目录
+        parent_dir = os.path.dirname(directory)
+        
+        # 获取目录内容
+        items = []
+        try:
+            for item in os.listdir(directory):
+                item_path = os.path.join(directory, item)
+                item_type = "directory" if os.path.isdir(item_path) else "file"
+                
+                # 对于文件，只显示 .db 和 .sqlite 文件
+                if item_type == "file" and not (item.endswith('.db') or item.endswith('.sqlite') or item.endswith('.vscdb')):
+                    continue
+                
+                items.append({
+                    "name": item,
+                    "path": item_path,
+                    "type": item_type
+                })
+                
+            # 按类型和名称排序
+            items.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
+            
+            return jsonify({
+                "success": True, 
+                "directory": directory,
+                "parent": parent_dir,
+                "items": items
+            })
+            
+        except PermissionError:
+            return jsonify({"success": False, "error": f"没有权限访问目录: {directory}"}), 403
+            
+    except Exception as e:
+        print(f"浏览文件系统失败: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.errorhandler(403)
 def forbidden(error):
     """处理403错误"""
@@ -233,5 +358,5 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("启动Flask应用...")
-    print(f"访问地址: http://127.0.0.1:5000")
-    app.run(debug=True, host='127.0.0.1', port=5000) 
+    print(f"访问地址: http://127.0.0.1:5001")
+    app.run(debug=True, host='127.0.0.1', port=5001) 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataVault - 现代化数据库管理平台</title>
+    <title>DataVault - VsCode数据库管理</title>
     
     <!-- 字体 -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -43,7 +43,7 @@
                     </div>
                     <div class="brand-info">
                         <h1 class="brand-title">DataVault</h1>
-                        <span class="brand-subtitle">现代化数据库管理平台</span>
+                        <span class="brand-subtitle">VsCode数据库管理</span>
                     </div>
                 </div>
             </div>
@@ -205,10 +205,6 @@
                                     <i class="fas fa-save"></i>
                                     保存更改
                                 </button>
-                                <button class="action-btn primary" onclick="tryJSON()" title="运行/测试 JSON">
-                                    <i class="fas fa-play"></i>
-                                    试试
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -273,6 +269,76 @@
                 <div class="modal-footer">
                     <button class="btn-secondary" onclick="closeConfirmModal()">取消</button>
                     <button class="btn-danger" id="confirmButton" onclick="confirmAction()">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置模态窗口 -->
+    <div class="modal-overlay" id="settingsModal" style="display: none;">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">系统设置</h3>
+                    <button class="close-btn" onclick="closeSettingsModal()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label for="dbPath">数据库文件路径</label>
+                            <div class="input-with-button">
+                                <input type="text" id="dbPath" class="form-control" placeholder="请输入数据库文件路径">
+                                <button class="btn-secondary" onclick="browseDbFile()">
+                                    <i class="fas fa-folder-open"></i> 浏览
+                                </button>
+                            </div>
+                            <small class="form-text">指定 SQLite 数据库文件的路径，例如：/Users/mac/Library/Application Support/Cursor/User/globalStorage/state.vscdb</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeSettingsModal()">取消</button>
+                    <button class="btn-primary" onclick="saveSettings()">保存设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文件浏览模态窗口 -->
+    <div class="modal-overlay" id="fileBrowserModal" style="display: none;">
+        <div class="modal-dialog file-browser-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">选择数据库文件</h3>
+                    <button class="close-btn" onclick="closeFileBrowserModal()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="file-browser-container">
+                        <div class="file-browser-path">
+                            <div class="path-display">
+                                <i class="fas fa-folder"></i>
+                                <span id="currentPath">/</span>
+                            </div>
+                            <button class="btn-icon" onclick="navigateToParent()" title="上级目录">
+                                <i class="fas fa-level-up-alt"></i>
+                            </button>
+                        </div>
+                        <div class="file-browser-content" id="fileBrowserContent">
+                            <!-- 文件和文件夹将在这里动态加载 -->
+                            <div class="file-browser-loading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <span>加载中...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" onclick="closeFileBrowserModal()">取消</button>
+                    <button class="btn-primary" onclick="selectCurrentFile()" id="selectFileBtn" disabled>选择文件</button>
                 </div>
             </div>
         </div>

@@ -5,6 +5,8 @@ let currentSelectedKey = null;
 let allKeys = [];
 let filteredKeys = [];
 let jsonEditorInstance = null;
+let appConfig = null;
+let currentSelectedFile = null;
 
 // 应用初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -16,6 +18,10 @@ async function initializeApp() {
     showLoadingState();
     
     try {
+        // 加载配置
+        await loadConfig();
+        
+        // 加载数据
         await loadKeys();
         initializeCodeMirror();
         setupEventListeners();
@@ -32,6 +38,28 @@ async function initializeApp() {
     hideLoadingState();
 }
 
+// 加载配置
+async function loadConfig() {
+    try {
+        const response = await fetch('/api/config');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        appConfig = data.config || {};
+        return appConfig;
+    } catch (error) {
+        console.error('加载配置失败:', error);
+        appConfig = {};
+        throw error;
+    }
+}
+
 // 显示加载状态
 function showLoadingState() {
     document.body.style.cursor = 'wait';
@@ -46,6 +74,8 @@ function hideLoadingState() {
 function setupEventListeners() {
     const searchInput = document.getElementById('keySearch');
     const searchClear = document.getElementById('searchClear');
+    const settingsBtn = document.querySelector('.settings-btn');
+    const refreshBtn = document.querySelector('.refresh-btn');
     
     // 搜索功能
     if (searchInput) {
@@ -56,6 +86,16 @@ function setupEventListeners() {
     // 清除搜索
     if (searchClear) {
         searchClear.addEventListener('click', clearSearch);
+    }
+    
+    // 设置按钮
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', showSettingsModal);
+    }
+    
+    // 刷新按钮
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshData);
     }
     
     // 窗口调整大小
@@ -734,10 +774,293 @@ function formatJson() {
     formatJSON();
 }
 
+// 刷新数据
+async function refreshData() {
+    try {
+        showLoadingState();
+        
+        // 显示刷新动画
+        const refreshBtn = document.querySelector('.refresh-btn i');
+        if (refreshBtn) {
+            refreshBtn.classList.add('fa-spin');
+        }
+        
+        // 重新加载数据
+        await loadKeys();
+        
+        // 如果当前有选中的key，重新加载它
+        if (currentSelectedKey) {
+            await selectKey(currentSelectedKey);
+        }
+        
+        showNotification('数据已刷新', 'success');
+    } catch (error) {
+        console.error('刷新数据失败:', error);
+        showNotification('刷新数据失败: ' + error.message, 'error');
+    } finally {
+        // 停止刷新动画
+        const refreshBtn = document.querySelector('.refresh-btn i');
+        if (refreshBtn) {
+            refreshBtn.classList.remove('fa-spin');
+        }
+        
+        hideLoadingState();
+    }
+}
+
+// 显示设置模态窗口
+function showSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    const dbPathInput = document.getElementById('dbPath');
+    
+    if (!modal || !dbPathInput) return;
+    
+    // 填充当前配置
+    dbPathInput.value = appConfig.db_path || '';
+    
+    modal.style.display = 'flex';
+}
+
+// 关闭设置模态窗口
+function closeSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// 保存设置
+async function saveSettings() {
+    const dbPathInput = document.getElementById('dbPath');
+    if (!dbPathInput) return;
+    
+    const dbPath = dbPathInput.value.trim();
+    if (!dbPath) {
+        showNotification('请输入数据库路径', 'warning');
+        return;
+    }
+    
+    try {
+        showLoadingState();
+        
+        const response = await fetch('/api/config', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ db_path: dbPath })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || result.message || '保存配置失败');
+        }
+        
+        // 更新配置
+        appConfig = result.config;
+        
+        showNotification('配置已保存', 'success');
+        closeSettingsModal();
+        
+        // 刷新数据
+        await refreshData();
+    } catch (error) {
+        console.error('保存配置失败:', error);
+        showNotification('保存配置失败: ' + error.message, 'error');
+    } finally {
+        hideLoadingState();
+    }
+}
+
+// 浏览数据库文件
+function browseDbFile() {
+    // 打开文件浏览器模态窗口
+    showFileBrowserModal();
+}
+
+// 显示文件浏览器模态窗口
+function showFileBrowserModal() {
+    const modal = document.getElementById('fileBrowserModal');
+    if (!modal) return;
+    
+    modal.style.display = 'flex';
+    
+    // 加载初始目录（使用用户主目录）
+    loadDirectory('/Users');
+}
+
+// 关闭文件浏览器模态窗口
+function closeFileBrowserModal() {
+    const modal = document.getElementById('fileBrowserModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// 加载目录内容
+async function loadDirectory(directory) {
+    const content = document.getElementById('fileBrowserContent');
+    const pathDisplay = document.getElementById('currentPath');
+    const selectFileBtn = document.getElementById('selectFileBtn');
+    
+    if (!content || !pathDisplay) return;
+    
+    // 重置选中状态
+    currentSelectedFile = null;
+    if (selectFileBtn) {
+        selectFileBtn.disabled = true;
+    }
+    
+    // 显示加载状态
+    content.innerHTML = `
+        <div class="file-browser-loading">
+            <i class="fas fa-spinner fa-spin"></i>
+            <span>加载中...</span>
+        </div>
+    `;
+    
+    // 更新路径显示
+    pathDisplay.textContent = directory;
+    
+    try {
+        // 发送请求获取目录内容
+        const response = await fetch(`/api/browse?directory=${encodeURIComponent(directory)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || '加载目录失败');
+        }
+        
+        // 清空内容
+        content.innerHTML = '';
+        
+        // 如果目录为空
+        if (data.items.length === 0) {
+            content.innerHTML = `
+                <div class="file-browser-empty">
+                    <i class="fas fa-folder-open"></i>
+                    <p>此文件夹为空</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // 显示目录内容
+        data.items.forEach(item => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.dataset.path = item.path;
+            fileItem.dataset.type = item.type;
+            
+            const icon = item.type === 'directory' ? 'fa-folder' : 'fa-database';
+            
+            fileItem.innerHTML = `
+                <div class="file-icon">
+                    <i class="fas ${icon}"></i>
+                </div>
+                <div class="file-name">${escapeHtml(item.name)}</div>
+            `;
+            
+            // 添加点击事件
+            fileItem.addEventListener('click', () => {
+                if (item.type === 'directory') {
+                    // 如果是目录，进入该目录
+                    loadDirectory(item.path);
+                } else {
+                    // 如果是文件，选中该文件
+                    selectFile(fileItem, item.path);
+                }
+            });
+            
+            // 添加双击事件
+            fileItem.addEventListener('dblclick', () => {
+                if (item.type === 'directory') {
+                    // 如果是目录，进入该目录
+                    loadDirectory(item.path);
+                } else {
+                    // 如果是文件，选中并确认
+                    selectFile(fileItem, item.path);
+                    selectCurrentFile();
+                }
+            });
+            
+            content.appendChild(fileItem);
+        });
+        
+    } catch (error) {
+        console.error('加载目录失败:', error);
+        content.innerHTML = `
+            <div class="file-browser-error">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>${escapeHtml(error.message)}</p>
+            </div>
+        `;
+    }
+}
+
+// 选择文件
+function selectFile(element, filePath) {
+    // 移除之前的选中状态
+    const selectedItems = document.querySelectorAll('.file-item.selected');
+    selectedItems.forEach(item => item.classList.remove('selected'));
+    
+    // 添加选中状态
+    element.classList.add('selected');
+    
+    // 更新当前选中的文件
+    currentSelectedFile = filePath;
+    
+    // 启用选择按钮
+    const selectFileBtn = document.getElementById('selectFileBtn');
+    if (selectFileBtn) {
+        selectFileBtn.disabled = false;
+    }
+}
+
+// 确认选择文件
+function selectCurrentFile() {
+    if (!currentSelectedFile) return;
+    
+    // 更新数据库路径输入框
+    const dbPathInput = document.getElementById('dbPath');
+    if (dbPathInput) {
+        dbPathInput.value = currentSelectedFile;
+    }
+    
+    // 关闭文件浏览器
+    closeFileBrowserModal();
+}
+
+// 导航到父目录
+function navigateToParent() {
+    const currentPath = document.getElementById('currentPath');
+    if (!currentPath) return;
+    
+    const directory = currentPath.textContent;
+    const parentDir = directory.split('/').slice(0, -1).join('/') || '/';
+    
+    loadDirectory(parentDir);
+}
+
 // 导出全局函数
 window.selectKey = selectKey;
 window.formatJSON = formatJSON;
 window.validateJSON = validateJSON;
 window.copyToClipboard = copyToClipboard;
 window.clearSearch = clearSearch;
-window.deleteRecord = deleteRecord; 
+window.deleteRecord = deleteRecord;
+window.refreshData = refreshData;
+window.showSettingsModal = showSettingsModal;
+window.closeSettingsModal = closeSettingsModal;
+window.saveSettings = saveSettings;
+window.browseDbFile = browseDbFile;
+window.closeFileBrowserModal = closeFileBrowserModal;
+window.selectCurrentFile = selectCurrentFile;
+window.navigateToParent = navigateToParent; 
